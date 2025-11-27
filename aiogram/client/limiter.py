@@ -1,239 +1,135 @@
-from typing import Optional, Dict
-from pydantic import BaseModel
-from enum import Enum
 import asyncio
 import time
-import random
+from enum import Enum
 from collections import deque
+from typing import Deque, Dict
+
 
 class ChatType(Enum):
     PRIVATE = "private"
     GROUP = "group"
     CHANNEL = "channel"
 
-class DefaultLimiter(BaseModel):
-    PER_CHAT_LIMIT: int = 1
-    PER_CHAT_PERIOD: float = 1.0
-
-    GROUP_LIMIT: int = 20
-    GROUP_PERIOD: float = 60.0
-
-    BROADCAST_LIMIT: int = 30
-    BROADCAST_PERIOD: float = 1.0
 
 class TelegramRateLimiter:
     """
-    Ограничитель частоты запросов для Telegram ботов с поддержкой разных типов чатов.
-    Поддерживает три типа лимитов:
-    1. В одном чате - не более 1 сообщения в секунду
-    2. В группе - не более 20 сообщений в минуту
-    3. Для массовых уведомлений - не более 30 сообщений в секунду
+    Асинхронный лимитер для Telegram-бота.
+
+    Ограничения:
+      1) Глобально: не более `global_per_second` сообщений в секунду
+         (по всем чатам суммарно).
+      2) В одном чате: не более 1 сообщения в секунду.
+      3) По всем группам суммарно: не более 20 сообщений в минуту.
+
+    Использование:
+        limiter = TelegramRateLimiter(global_per_second=30)
+
+        await limiter.wait(str(chat_id), ChatType.GROUP)
+        await bot.send_message(chat_id, "Hello")
     """
 
-    def __init__(self, settings: DefaultLimiter = None):
-        if settings is None:
-            settings = DefaultLimiter()
+    # 1 сообщение в секунду на чат
+    _CHAT_CAPACITY = 1
+    _CHAT_PERIOD = 1.0  # сек
 
-        # Лимиты для Telegram
-        self.PER_CHAT_LIMIT = settings.PER_CHAT_LIMIT
-        self.PER_CHAT_PERIOD = settings.PER_CHAT_PERIOD
-        
-        self.GROUP_LIMIT = settings.GROUP_LIMIT
-        self.GROUP_PERIOD = settings.GROUP_PERIOD
-        
-        self.BROADCAST_LIMIT = settings.BROADCAST_LIMIT
-        self.BROADCAST_PERIOD = settings.BROADCAST_PERIOD
-        
-        # Очереди для запросов по приоритетам
-        self.high_priority_queue = asyncio.Queue()
-        self.low_priority_queue = asyncio.Queue()
-        
-        # История вызовов для разных лимитов
-        self.per_chat_history: Dict[str, deque] = {}  # chat_id -> deque[timestamp]
-        self.group_history: deque = deque()  # для групповых чатов
-        self.broadcast_history: deque = deque()  # для всех сообщений
-        
-        # Блокировка для потокобезопасной работы
-        self.lock = asyncio.Lock()
-        
-        # Флаг активности обработчика
-        self._processing = False
-        self._processing_task: Optional[asyncio.Task] = None
+    # 20 сообщений в минуту по всем группам СУММАРНО
+    _GROUP_CAPACITY = 20
+    _GROUP_PERIOD = 60.0  # сек
 
-    async def _process_queue(self):
-        """Обработка очереди до полного опустошения"""
-        try:
-            while not self.high_priority_queue.empty() or not self.low_priority_queue.empty():
-                # Сначала обрабатываем высокоприоритетные запросы
-                if not self.high_priority_queue.empty():
-                    item = await self.high_priority_queue.get()
-                    await self._wait_and_release(item)
-                    self.high_priority_queue.task_done()
-                
-                # Если высокоприоритетных нет - обрабатываем низкоприоритетные
-                elif not self.low_priority_queue.empty():
-                    item = await self.low_priority_queue.get()
-                    await self._wait_and_release(item)
-                    self.low_priority_queue.task_done()
+    def __init__(self, global_per_second: int) -> None:
+        if global_per_second is None:
+            global_per_second = 29
 
-        finally:
-            self._processing = False
-            self._processing_task = None
+        if global_per_second <= 0:
+            raise ValueError("global_per_second должен быть > 0")
 
-    async def _wait_and_release(self, item: dict):
-        """Ждем возможности выполнить запрос и разрешаем его"""
-        future = item['future']
-        chat_id = item['chat_id']
-        chat_type = item['chat_type']
-        is_broadcast = item['is_broadcast']
-        
-        try:
-            await self._wait_telegram_limits(chat_id, chat_type, is_broadcast)
-            if not future.done():
-                future.set_result(None)
-        except Exception as e:
-            if not future.done():
-                future.set_exception(e)
+        # Глобальный лимит (N сообщений в секунду по всем чатам)
+        self.global_per_second = global_per_second
+        self._global_window: Deque[float] = deque()
 
-    async def _wait_telegram_limits(self, chat_id: str, chat_type: ChatType, is_broadcast: bool):
-        """Ожидание в соответствии с лимитами Telegram"""
-        async with self.lock:
-            now = time.monotonic()
-            # Очищаем устаревшие записи для всех лимитов
-            self._cleanup_history(now)
-            # Проверяем все лимиты и ждем, если нужно
-            while True:
-                can_proceed = True
-                sleep_time = 0
-                # 1. Лимит для конкретного чата (1 сообщение/сек)
-                if len(self.per_chat_history.get(chat_id, deque())) >= self.PER_CHAT_LIMIT:
-                    oldest = self.per_chat_history[chat_id][0]
-                    sleep_time = max(sleep_time, self.PER_CHAT_PERIOD - (now - oldest) + 0.01)
-                    can_proceed = False
-                # 2. Лимит для групп (20 сообщений/минуту)
-                if chat_type in [ChatType.GROUP, ChatType.CHANNEL]:
-                    if len(self.group_history) >= self.GROUP_LIMIT:
-                        oldest = self.group_history[0]
-                        sleep_time = max(sleep_time, self.GROUP_PERIOD - (now - oldest) + 0.01)
-                        can_proceed = False
-                # 3. Лимит для массовых рассылок (30 сообщений/сек)
-                if is_broadcast:
-                    if len(self.broadcast_history) >= self.BROADCAST_LIMIT:
-                        oldest = self.broadcast_history[0]
-                        sleep_time = max(sleep_time, self.BROADCAST_PERIOD - (now - oldest) + 0.01)
-                        can_proceed = False
-                if can_proceed:
-                    break
-                # Добавляем небольшой jitter для избежания коллизий
-                await asyncio.sleep(max(0, sleep_time))
-                # Обновляем время после ожидания
-                now = time.monotonic()
-                self._cleanup_history(now)
-            # Записываем время вызова во все соответствующие истории
-            self._record_call(now, chat_id, chat_type, is_broadcast)
+        # Лимит "1 сообщение в секунду на чат"
+        self._per_chat_window: Dict[str, Deque[float]] = {}
 
-    def _cleanup_history(self, now: float):
-        """Очищает устаревшие записи из всех очередей"""
-        # Очищаем историю для конкретных чатов
-        chats_to_remove = []
-        for chat_id, history in self.per_chat_history.items():
-            while history and now - history[0] > self.PER_CHAT_PERIOD:
-                history.popleft()
-            if len(history) == 0:
-                chats_to_remove.append(chat_id)
-        # Удаляем пустые очереди чатов
-        for chat_id in chats_to_remove:
-            del self.per_chat_history[chat_id]
-        # Очищаем историю групп
-        while self.group_history and now - self.group_history[0] > self.GROUP_PERIOD:
-            self.group_history.popleft()
-        # Очищаем историю массовых рассылок
-        while self.broadcast_history and now - self.broadcast_history[0] > self.BROADCAST_PERIOD:
-            self.broadcast_history.popleft()
+        # ЕДИНЫЙ лимит для ВСЕХ групп: 20 сообщений в минуту
+        self._groups_global_window: Deque[float] = deque()
 
-    def _record_call(self, timestamp: float, chat_id: str, chat_type: ChatType, is_broadcast: bool):
-        """Записывает вызов во все соответствующие очереди"""
-        # Запись для лимита по чату
-        if chat_id not in self.per_chat_history:
-            self.per_chat_history[chat_id] = deque()
-        self.per_chat_history[chat_id].append(timestamp)
-        # Запись для лимита групп, если это группа или канал
-        if chat_type in [ChatType.GROUP, ChatType.CHANNEL]:
-            self.group_history.append(timestamp)
-        # Запись для лимита массовых рассылок
-        if is_broadcast:
-            self.broadcast_history.append(timestamp)
+        # Один общий lock для атомарных обновлений окон
+        self._lock = asyncio.Lock()
 
-    async def wait(self, chat_id: str, chat_type: ChatType = ChatType.PRIVATE, 
-                   is_broadcast: bool = False) -> None:
+    async def wait(self, chat_id: str, chat_type: ChatType = ChatType.PRIVATE) -> None:
         """
-        Ожидание разрешения на выполнение запроса в соответствии с лимитами Telegram.
-        Рассылки автоматически считаются низкоприоритетными.
-        
-        Args:
-            chat_id: ID чата (строка, чтобы поддерживать и числовые и строковые ID)
-            chat_type: Тип чата (PRIVATE, GROUP, CHANNEL)
-            is_broadcast: Является ли сообщение частью массовой рассылки
-        """
-        future = asyncio.Future()
-        item = {
-            'future': future,
-            'chat_id': str(chat_id),
-            'chat_type': chat_type,
-            'is_broadcast': is_broadcast
-        }
-        
-        # Рассылки идут в низкоприоритетную очередь, остальное - в высокоприоритетную
-        if is_broadcast:
-            await self.low_priority_queue.put(item)
-        else:
-            await self.high_priority_queue.put(item)
-        
-        # Запускаем обработчик, если он не активен
-        if not self._processing:
-            self._processing = True
-            self._processing_task = asyncio.create_task(self._process_queue())
-        
-        # Ждем разрешения
-        await future
+        Ожидает, пока все лимиты (глобальный, по чату и групповой)
+        позволят отправить следующее сообщение.
 
-    def can_execute_immediately(self, chat_id: str, chat_type: ChatType = ChatType.PRIVATE, 
-                               is_broadcast: bool = False) -> bool:
-        """Проверяет, можно ли выполнить запрос немедленно"""
-        now = time.monotonic()
+        Не блокирует другие корутины (использует только asyncio.sleep).
+        """
+        # Можно передавать chat_id как int, но внутри приводим к str для единообразия
         chat_id = str(chat_id)
-        
-        with self.lock:
-            # Очищаем устаревшие записи
-            self._cleanup_history(now)
-            
-            # Проверяем все лимиты
-            # 1. Лимит для конкретного чата
-            if len(self.per_chat_history.get(chat_id, deque())) >= self.PER_CHAT_LIMIT:
-                return False
-            
-            # 2. Лимит для групп
-            if chat_type in [ChatType.GROUP, ChatType.CHANNEL]:
-                if len(self.group_history) >= self.GROUP_LIMIT:
-                    return False
-            
-            # 3. Лимит для массовых рассылок
-            if is_broadcast:
-                if len(self.broadcast_history) >= self.BROADCAST_LIMIT:
-                    return False
-            
-            return True
 
-    async def wait_until_idle(self):
-        """Ожидание завершения всех задач в очереди"""
-        if self._processing_task:
-            await self._processing_task
+        while True:
+            async with self._lock:
+                now = time.monotonic()
 
-    async def close(self):
-        """Завершение работы лимитера"""
-        if self._processing_task:
-            self._processing_task.cancel()
-            try:
-                await self._processing_task
-            except asyncio.CancelledError:
-                pass
+                # 1. Глобальный лимит: N сообщений в 1 секунду
+                delay_global = self._calc_delay(
+                    window=self._global_window,
+                    capacity=self.global_per_second,
+                    period=1.0,
+                    now=now,
+                )
+
+                # 2. Лимит 1 сообщение в секунду на конкретный чат
+                chat_window = self._per_chat_window.setdefault(chat_id, deque())
+                delay_chat = self._calc_delay(
+                    window=chat_window,
+                    capacity=self._CHAT_CAPACITY,
+                    period=self._CHAT_PERIOD,
+                    now=now,
+                )
+
+                # 3. Лимит 20 сообщений в минуту по ВСЕМ группам
+                delay_groups = 0.0
+                if chat_type == ChatType.GROUP:
+                    delay_groups = self._calc_delay(
+                        window=self._groups_global_window,
+                        capacity=self._GROUP_CAPACITY,
+                        period=self._GROUP_PERIOD,
+                        now=now,
+                    )
+
+                # Итоговая задержка — максимум из всех
+                delay = max(delay_global, delay_chat, delay_groups)
+
+                if delay <= 0:
+                    # Можно отправлять: фиксируем факт "отправки" в нужных окнах
+                    self._global_window.append(now)
+                    chat_window.append(now)
+                    if chat_type == ChatType.GROUP:
+                        self._groups_global_window.append(now)
+                    return  # выходим из wait()
+
+            # Спим ВНЕ lock, чтобы не держать его и не блокировать другие корутины
+            await asyncio.sleep(delay)
+
+    @staticmethod
+    def _calc_delay(
+        window: Deque[float],
+        capacity: int,
+        period: float,
+        now: float,
+    ) -> float:
+        """
+        Скользящее окно:
+        - выкидываем старые события (старше period),
+        - если событий меньше capacity — ограничение не активно (delay = 0),
+        - иначе считаем, сколько надо подождать, чтобы "освободился" слот.
+        """
+        # Очищаем от старых таймстемпов
+        while window and (now - window[0]) >= period:
+            window.popleft()
+
+        if len(window) < capacity:
+            return 0.0
+
+        oldest = window[0]
+        return period - (now - oldest)

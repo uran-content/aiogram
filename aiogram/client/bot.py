@@ -244,7 +244,7 @@ from ..types import (
 from .default import Default, DefaultBotProperties
 from .session.aiohttp import AiohttpSession
 from .session.base import BaseSession
-from .limiter import TelegramRateLimiter, ChatType, DefaultLimiter
+from .limiter import TelegramRateLimiter, ChatType
 
 T = TypeVar("T")
 MESSAGE_MODIFYING_CLASSES = {
@@ -295,7 +295,7 @@ class Bot:
             default = DefaultBotProperties(max_sends_per_secods=29)
 
         self.session = session
-        self.limiter = TelegramRateLimiter()
+        self.limiter = TelegramRateLimiter(global_per_second=default.max_sends_per_secods)
 
         # Few arguments are completely removed in 3.7.0 version
         # Temporary solution to raise an error if user passed these arguments
@@ -531,7 +531,7 @@ class Bot:
                 # Для строковых ID (например, @username) считаем каналами
                 chat_type = ChatType.CHANNEL
             
-            await self.limiter.wait(chat_id=str(chat_id), chat_type=chat_type, is_broadcast=is_broadcast)
+            await self.limiter.wait(chat_id=chat_id, chat_type=chat_type)
         
         if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
             method.allow_paid_broadcast = self.default.paid_broadcast
