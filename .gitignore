@@ -22,3 +22,6 @@ reports
 
 dev/
 .venv/
+venv/
+
+test.py

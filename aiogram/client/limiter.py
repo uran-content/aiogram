@@ -47,12 +47,15 @@ class TelegramRateLimiter:
     _GROUP_CAPACITY = 20
     _GROUP_PERIOD = 60.0  # сек
 
-    def __init__(self, global_per_second: int) -> None:
+    def __init__(self, global_per_second: int, broadcast_share: float = 2.0 / 3.0) -> None:
         if global_per_second is None:
             global_per_second = 29
 
         if global_per_second <= 0:
             raise ValueError("global_per_second должен быть > 0")
+        
+        if not (0 < broadcast_share <= 1):
+            raise ValueError("broadcast_share должен быть в (0, 1]")
 
         # Глобальный лимит (N сообщений в секунду по всем чатам)
         self.global_per_second = global_per_second
@@ -63,6 +66,10 @@ class TelegramRateLimiter:
 
         # ЕДИНЫЙ лимит для ВСЕХ групп: 20 сообщений в минуту
         self._groups_global_window: Deque[float] = deque()
+
+        # Доп. окно для broadcast-сообщений (priority=2)
+        self.broadcast_capacity = max(1, int(self.global_per_second * broadcast_share))
+        self._broadcast_window: Deque[float] = deque()
 
         # Один общий lock для атомарных обновлений окон
         self._lock = asyncio.Lock()
@@ -79,18 +86,17 @@ class TelegramRateLimiter:
         priority: int = 1,
     ) -> None:
         """
-        Ожидает, пока все лимиты (глобальный, по чату и групповой) позволят
-        отправить следующее сообщение.
+        Ожидает, пока все лимиты (глобальный, по чату, групповой и при необходимости broadcast)
+        позволят отправить следующее сообщение.
 
         priority:
-          1 — приоритетный (как старое поведение, по умолчанию)
-          2 — второй приоритет: работает по тем же лимитам, но только тогда,
-              когда нет ни одного активного ожидания с priority=1.
-
-        Не блокирует другие корутины (использует только asyncio.sleep).
+          1 — высокий приоритет (обычные сообщения)
+          2 — broadcast: ограничен отдельным лимитом (2/3 от global_per_second)
+              и запускается только когда нет активных high priority.
         """
         chat_id = str(chat_id)
         is_high_priority = (priority == 1)
+        is_broadcast = (priority == 2)
 
         # Регистрируем "я — ожидающий с высоким приоритетом"
         if is_high_priority:
@@ -135,8 +141,18 @@ class TelegramRateLimiter:
                                 now=now,
                             )
 
+                        # 4. Доп. лимит для broadcast-сообщений
+                        delay_broadcast = 0.0
+                        if is_broadcast:
+                            delay_broadcast = self._calc_delay(
+                                window=self._broadcast_window,
+                                capacity=self.broadcast_capacity,
+                                period=1.0,
+                                now=now,
+                            )
+
                         # Итоговая задержка — максимум из всех
-                        delay = max(delay_global, delay_chat, delay_groups)
+                        delay = max(delay_global, delay_chat, delay_groups, delay_broadcast)
 
                         if delay <= 0:
                             # Можно отправлять: фиксируем факт "отправки" в нужных окнах
@@ -144,6 +160,8 @@ class TelegramRateLimiter:
                             chat_window.append(now)
                             if chat_type == ChatType.GROUP:
                                 self._groups_global_window.append(now)
+                            if is_broadcast:
+                                self._broadcast_window.append(now)
                             # Выходим из wait()
                             return
 
