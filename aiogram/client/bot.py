@@ -531,7 +531,7 @@ class Bot:
                 # Для строковых ID (например, @username) считаем каналами
                 chat_type = ChatType.CHANNEL
             
-            await self.limiter.wait(chat_id=chat_id, chat_type=chat_type)
+            await self.limiter.wait(chat_id=chat_id, chat_type=chat_type, priority=1 if not is_broadcast else 2)
         
         if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
             method.allow_paid_broadcast = self.default.paid_broadcast

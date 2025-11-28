@@ -21,11 +21,22 @@ class TelegramRateLimiter:
       2) В одном чате: не более 1 сообщения в секунду.
       3) По всем группам суммарно: не более 20 сообщений в минуту.
 
+    Приоритеты:
+      - priority=1 (по умолчанию): "первый" / высокий приоритет.
+      - priority=2: "второй" приоритет, который срабатывает только тогда,
+        когда нет активных ожиданий с priority=1.
+
     Использование:
         limiter = TelegramRateLimiter(global_per_second=30)
 
+        # Высокий приоритет (как раньше, по умолчанию)
         await limiter.wait(str(chat_id), ChatType.GROUP)
-        await bot.send_message(chat_id, "Hello")
+
+        # Явно высокий приоритет
+        await limiter.wait(str(chat_id), ChatType.GROUP, priority=1)
+
+        # Второй приоритет
+        await limiter.wait(str(chat_id), ChatType.GROUP, priority=2)
     """
 
     # 1 сообщение в секунду на чат
@@ -56,60 +67,94 @@ class TelegramRateLimiter:
         # Один общий lock для атомарных обновлений окон
         self._lock = asyncio.Lock()
 
-    async def wait(self, chat_id: str, chat_type: ChatType = ChatType.PRIVATE) -> None:
+        # Сколько сейчас активных ожиданий высокого приоритета (priority=1)
+        # Любое ожидание со вторым приоритетом (priority=2) будет пускаться
+        # только если это значение равно 0.
+        self._high_priority_waiters: int = 0
+
+    async def wait(
+        self,
+        chat_id: str,
+        chat_type: ChatType = ChatType.PRIVATE,
+        priority: int = 1,
+    ) -> None:
         """
-        Ожидает, пока все лимиты (глобальный, по чату и групповой)
-        позволят отправить следующее сообщение.
+        Ожидает, пока все лимиты (глобальный, по чату и групповой) позволят
+        отправить следующее сообщение.
+
+        priority:
+          1 — приоритетный (как старое поведение, по умолчанию)
+          2 — второй приоритет: работает по тем же лимитам, но только тогда,
+              когда нет ни одного активного ожидания с priority=1.
 
         Не блокирует другие корутины (использует только asyncio.sleep).
         """
-        # Можно передавать chat_id как int, но внутри приводим к str для единообразия
         chat_id = str(chat_id)
+        is_high_priority = (priority == 1)
 
-        while True:
+        # Регистрируем "я — ожидающий с высоким приоритетом"
+        if is_high_priority:
             async with self._lock:
-                now = time.monotonic()
+                self._high_priority_waiters += 1
 
-                # 1. Глобальный лимит: N сообщений в 1 секунду
-                delay_global = self._calc_delay(
-                    window=self._global_window,
-                    capacity=self.global_per_second,
-                    period=1.0,
-                    now=now,
-                )
+        try:
+            while True:
+                async with self._lock:
+                    now = time.monotonic()
 
-                # 2. Лимит 1 сообщение в секунду на конкретный чат
-                chat_window = self._per_chat_window.setdefault(chat_id, deque())
-                delay_chat = self._calc_delay(
-                    window=chat_window,
-                    capacity=self._CHAT_CAPACITY,
-                    period=self._CHAT_PERIOD,
-                    now=now,
-                )
+                    # Если это второй приоритет, а есть хотя бы один
+                    # активный высокий приоритет — даём небольшую задержку
+                    # и даже не пробуем "залезать" в лимиты.
+                    if not is_high_priority and self._high_priority_waiters > 0:
+                        delay = 0.05  # 50 мс — просто чтобы не крутить цикл
+                    else:
+                        # 1. Глобальный лимит: N сообщений в 1 секунду
+                        delay_global = self._calc_delay(
+                            window=self._global_window,
+                            capacity=self.global_per_second,
+                            period=1.0,
+                            now=now,
+                        )
 
-                # 3. Лимит 20 сообщений в минуту по ВСЕМ группам
-                delay_groups = 0.0
-                if chat_type == ChatType.GROUP:
-                    delay_groups = self._calc_delay(
-                        window=self._groups_global_window,
-                        capacity=self._GROUP_CAPACITY,
-                        period=self._GROUP_PERIOD,
-                        now=now,
-                    )
+                        # 2. Лимит 1 сообщение в секунду на конкретный чат
+                        chat_window = self._per_chat_window.setdefault(chat_id, deque())
+                        delay_chat = self._calc_delay(
+                            window=chat_window,
+                            capacity=self._CHAT_CAPACITY,
+                            period=self._CHAT_PERIOD,
+                            now=now,
+                        )
 
-                # Итоговая задержка — максимум из всех
-                delay = max(delay_global, delay_chat, delay_groups)
+                        # 3. Лимит 20 сообщений в минуту по ВСЕМ группам
+                        delay_groups = 0.0
+                        if chat_type == ChatType.GROUP:
+                            delay_groups = self._calc_delay(
+                                window=self._groups_global_window,
+                                capacity=self._GROUP_CAPACITY,
+                                period=self._GROUP_PERIOD,
+                                now=now,
+                            )
 
-                if delay <= 0:
-                    # Можно отправлять: фиксируем факт "отправки" в нужных окнах
-                    self._global_window.append(now)
-                    chat_window.append(now)
-                    if chat_type == ChatType.GROUP:
-                        self._groups_global_window.append(now)
-                    return  # выходим из wait()
+                        # Итоговая задержка — максимум из всех
+                        delay = max(delay_global, delay_chat, delay_groups)
 
-            # Спим ВНЕ lock, чтобы не держать его и не блокировать другие корутины
-            await asyncio.sleep(delay)
+                        if delay <= 0:
+                            # Можно отправлять: фиксируем факт "отправки" в нужных окнах
+                            self._global_window.append(now)
+                            chat_window.append(now)
+                            if chat_type == ChatType.GROUP:
+                                self._groups_global_window.append(now)
+                            # Выходим из wait()
+                            return
+
+                # Спим ВНЕ lock, чтобы не держать его и не блокировать другие корутины
+                await asyncio.sleep(delay)
+        finally:
+            # Как только корутина с высоким приоритетом полностью закончила wait(),
+            # уменьшаем счётчик таких ожиданий.
+            if is_high_priority:
+                async with self._lock:
+                    self._high_priority_waiters -= 1
 
     @staticmethod
     def _calc_delay(
