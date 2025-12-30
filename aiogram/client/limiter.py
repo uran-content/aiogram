@@ -3,6 +3,7 @@ import time
 from enum import Enum
 from collections import deque
 from typing import Deque, Dict
+from aiogram.exceptions import TelegramRetryAfter
 
 
 class ChatType(Enum):
