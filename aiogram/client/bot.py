@@ -14,6 +14,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    Callable
 )
 
 import aiofiles
@@ -241,13 +242,17 @@ from ..types import (
     UserProfilePhotos,
     WebhookInfo,
 )
+from ..exceptions import (
+    TelegramNetworkError
+)
+
 from .default import Default, DefaultBotProperties
 from .session.aiohttp import AiohttpSession
 from .session.base import BaseSession
 from .limiter import TelegramRateLimiter, ChatType
 
 T = TypeVar("T")
-MESSAGE_MODIFYING_CLASSES = {
+MESSAGE_LIMITING_CLASSES = {
     'SendAnimation',
     'SendAudio',
     'SendContact',
@@ -274,6 +279,7 @@ class Bot:
         token: str,
         session: Optional[BaseSession] = None,
         default: Optional[DefaultBotProperties] = None,
+        server_disconnected_processor: Callable = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -296,6 +302,7 @@ class Bot:
 
         self.session = session
         self.limiter = TelegramRateLimiter(global_per_second=default.max_sends_per_secods)
+        self.server_disconnected_processor = server_disconnected_processor
 
         # Few arguments are completely removed in 3.7.0 version
         # Temporary solution to raise an error if user passed these arguments
@@ -493,7 +500,8 @@ class Bot:
 
     async def __call__(
         self, method: TelegramMethod[T], request_timeout: Optional[int] = None,
-        is_broadcast: bool = False, chat_id: ChatIdUnion = None
+        is_broadcast: bool = False, chat_id: ChatIdUnion = None,
+        use_global_limit: bool = False
     ) -> T:
         """
         Call API method
@@ -504,39 +512,50 @@ class Bot:
         :param chat_id:
         :return:
         """
-        if method.__class__.__name__ in MESSAGE_MODIFYING_CLASSES:
-            # Определяем chat_id из метода, если не передан
-            if chat_id is None:
-                # Пытаемся получить chat_id из метода
-                if hasattr(method, 'chat_id'):
-                    chat_id = method.chat_id
-                elif hasattr(method, 'chat') and hasattr(method.chat, 'id'):
-                    chat_id = method.chat.id
-                else:
-                    # Если не можем определить chat_id, используем заглушку
-                    chat_id = "unknown"
-            
-            # Определяем тип чата
-            if isinstance(chat_id, int) or (isinstance(chat_id, str) and chat_id.lstrip('-').isdigit()):
-                if str(chat_id).startswith("-"):
-                    # Проверяем, является ли это супергруппой или каналом
-                    chat_id_str = str(chat_id)
-                    if chat_id_str.startswith("-100"):
-                        chat_type = ChatType.CHANNEL  # Каналы обычно начинаются с -100
+        try:
+
+            use_global_limit = use_global_limit or is_broadcast
+
+            if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
+                    method.allow_paid_broadcast = self.default.paid_broadcast
+
+            if method.__class__.__name__ in MESSAGE_LIMITING_CLASSES:
+                # Определяем chat_id из метода, если не передан
+                if chat_id is None:
+                    # Пытаемся получить chat_id из метода
+                    if hasattr(method, 'chat_id'):
+                        chat_id = method.chat_id
+                    elif hasattr(method, 'chat') and hasattr(method.chat, 'id'):
+                        chat_id = method.chat.id
                     else:
-                        chat_type = ChatType.GROUP
+                        # Если не можем определить chat_id, используем заглушку
+                        chat_id = "unknown"
+                
+                # Определяем тип чата
+                if isinstance(chat_id, int) or (isinstance(chat_id, str) and chat_id.lstrip('-').isdigit()):
+                    if str(chat_id).startswith("-"):
+                        # Проверяем, является ли это супергруппой или каналом
+                        chat_id_str = str(chat_id)
+                        if chat_id_str.startswith("-100"):
+                            chat_type = ChatType.CHANNEL  # Каналы обычно начинаются с -100
+                        else:
+                            chat_type = ChatType.GROUP
+                    else:
+                        chat_type = ChatType.PRIVATE
                 else:
-                    chat_type = ChatType.PRIVATE
-            else:
-                # Для строковых ID (например, @username) считаем каналами
-                chat_type = ChatType.CHANNEL
-            
-            await self.limiter.wait(chat_id=chat_id, chat_type=chat_type, priority=1 if not is_broadcast else 2)
+                    # Для строковых ID (например, @username) считаем каналами
+                    chat_type = ChatType.CHANNEL
+                
+                return await self.limiter.run(self.session(self, method, timeout=request_timeout),
+                                            chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
+
+            return await self.session(self, method, timeout=request_timeout)
         
-        if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
-            method.allow_paid_broadcast = self.default.paid_broadcast
-        
-        return await self.session(self, method, timeout=request_timeout)
+        except TelegramNetworkError as e:
+            msg = e.message.lower()
+            if "serverdisconnectederror" in msg and self.server_disconnected_processor:
+                self.server_disconnected_processor()
+
 
     def __hash__(self) -> int:
         """
@@ -2213,7 +2232,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send animation files (GIF or H.264/MPEG-4 AVC video without sound). On success, the sent :class:`aiogram.types.message.Message` is returned. Bots can currently send animation files of up to 50 MB in size, this limit may be changed in the future.
@@ -2268,7 +2288,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_audio(
         self,
@@ -2292,7 +2313,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send audio files, if you want Telegram clients to display them in the music player. Your audio must be in the .MP3 or .M4A format. On success, the sent :class:`aiogram.types.message.Message` is returned. Bots can currently send audio files of up to 50 MB in size, this limit may be changed in the future.
@@ -2344,7 +2366,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_chat_action(
         self,
@@ -2397,7 +2420,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send phone contacts. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2440,7 +2464,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_dice(
         self,
@@ -2457,7 +2482,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send an animated emoji that will display a random value. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2494,7 +2520,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_document(
         self,
@@ -2516,7 +2543,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send general files. On success, the sent :class:`aiogram.types.message.Message` is returned. Bots can currently send files of any type of up to 50 MB in size, this limit may be changed in the future.
@@ -2563,7 +2591,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_game(
         self,
@@ -2580,7 +2609,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send a game. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2617,7 +2647,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_invoice(
         self,
@@ -2653,7 +2684,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send invoices. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2728,7 +2760,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_location(
         self,
@@ -2750,7 +2783,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send point on the map. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2797,7 +2831,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_media_group(
         self,
@@ -2813,7 +2848,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> list[Message]:
         """
         Use this method to send a group of photos, videos, documents or audios as an album. Documents and audio files can be only grouped in an album with messages of the same type. On success, an array of `Messages <https://core.telegram.org/bots/api#message>`_ that were sent is returned.
@@ -2848,7 +2884,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_message(
         self,
@@ -2873,7 +2910,8 @@ class Bot:
         ),
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send text messages. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2918,7 +2956,8 @@ class Bot:
             disable_web_page_preview=disable_web_page_preview,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_photo(
         self,
@@ -2942,7 +2981,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send photos. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -2989,7 +3029,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_poll(
         self,
@@ -3019,7 +3060,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send a native poll. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -3082,7 +3124,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_sticker(
         self,
@@ -3100,7 +3143,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send static .WEBP, `animated <https://telegram.org/blog/animated-stickers>`_ .TGS, or `video <https://telegram.org/blog/video-stickers-better-reactions>`_ .WEBM stickers. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -3139,7 +3183,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_venue(
         self,
@@ -3163,7 +3208,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send information about a venue. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -3214,7 +3260,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_video(
         self,
@@ -3245,7 +3292,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send video files, Telegram clients support MPEG4 videos (other formats may be sent as :class:`aiogram.types.document.Document`). On success, the sent :class:`aiogram.types.message.Message` is returned. Bots can currently send video files of up to 50 MB in size, this limit may be changed in the future.
@@ -3306,7 +3354,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_video_note(
         self,
@@ -3326,7 +3375,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         As of `v.4.0 <https://telegram.org/blog/video-messages-and-telescope>`_, Telegram clients support rounded square MPEG4 videos of up to 1 minute long. Use this method to send video messages. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -3369,7 +3419,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def send_voice(
         self,
@@ -3390,7 +3441,8 @@ class Bot:
         allow_sending_without_reply: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send audio files, if you want Telegram clients to display the file as a playable voice message. For this to work, your audio must be in an .OGG file encoded with OPUS, or in .MP3 format, or in .M4A format (other formats may be sent as :class:`aiogram.types.audio.Audio` or :class:`aiogram.types.document.Document`). On success, the sent :class:`aiogram.types.message.Message` is returned. Bots can currently send voice messages of up to 50 MB in size, this limit may be changed in the future.
@@ -3435,7 +3487,8 @@ class Bot:
             allow_sending_without_reply=allow_sending_without_reply,
             reply_to_message_id=reply_to_message_id,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def set_chat_administrator_custom_title(
         self,
@@ -4667,7 +4720,8 @@ class Bot:
         reply_parameters: Optional[ReplyParameters] = None,
         reply_markup: Optional[ReplyMarkupUnion] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send paid media. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -4708,7 +4762,8 @@ class Bot:
             reply_parameters=reply_parameters,
             reply_markup=reply_markup,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def create_chat_subscription_invite_link(
         self,
@@ -4852,7 +4907,8 @@ class Bot:
         text_parse_mode: Optional[str] = None,
         text_entities: Optional[list[MessageEntity]] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> bool:
         """
         Sends a gift to the given user or channel chat. The gift can't be converted to Telegram Stars by the receiver. Returns :code:`True` on success.
@@ -4879,7 +4935,8 @@ class Bot:
             text_parse_mode=text_parse_mode,
             text_entities=text_entities,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
 
     async def set_user_emoji_status(
         self,
@@ -5556,7 +5613,8 @@ class Bot:
         reply_parameters: Optional[ReplyParameters] = None,
         reply_markup: Optional[InlineKeyboardMarkup] = None,
         request_timeout: Optional[int] = None,
-        is_broadcast: bool = False
+        is_broadcast: bool = False,
+        use_global_limit: bool = False
     ) -> Message:
         """
         Use this method to send a checklist on behalf of a connected business account. On success, the sent :class:`aiogram.types.message.Message` is returned.
@@ -5585,4 +5643,5 @@ class Bot:
             reply_parameters=reply_parameters,
             reply_markup=reply_markup,
         )
-        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id)
+        return await self(call, request_timeout=request_timeout, is_broadcast=is_broadcast, chat_id=chat_id,
+                          use_global_limit=use_global_limit)
