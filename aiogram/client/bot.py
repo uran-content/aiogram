@@ -14,7 +14,8 @@ from typing import (
     TypeVar,
     Union,
     cast,
-    Callable
+    Callable,
+    Awaitable
 )
 
 import aiofiles
@@ -279,7 +280,7 @@ class Bot:
         token: str,
         session: Optional[BaseSession] = None,
         default: Optional[DefaultBotProperties] = None,
-        server_disconnected_processor: Callable = None,
+        server_disconnected_processor: Callable[[], Awaitable] = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -554,7 +555,7 @@ class Bot:
         except TelegramNetworkError as e:
             msg = e.message.lower()
             if "serverdisconnectederror" in msg and self.server_disconnected_processor:
-                self.server_disconnected_processor()
+                await self.server_disconnected_processor()
 
 
     def __hash__(self) -> int:
