@@ -502,7 +502,8 @@ class Bot:
     async def __call__(
         self, method: TelegramMethod[T], request_timeout: Optional[int] = None,
         is_broadcast: bool = False, chat_id: ChatIdUnion = None,
-        use_global_limit: bool = False
+        use_global_limit: bool = False,
+        max_server_disconnected_retries: int = 3
     ) -> T:
         """
         Call API method
@@ -513,49 +514,52 @@ class Bot:
         :param chat_id:
         :return:
         """
-        try:
+        retry = 0
+        while retry < max_server_disconnected_retries:
+            try:
 
-            use_global_limit = use_global_limit or is_broadcast
+                use_global_limit = use_global_limit or is_broadcast
 
-            if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
-                    method.allow_paid_broadcast = self.default.paid_broadcast
+                if hasattr(method, "allow_paid_broadcast") and method.allow_paid_broadcast is None:
+                        method.allow_paid_broadcast = self.default.paid_broadcast
 
-            if method.__class__.__name__ in MESSAGE_LIMITING_CLASSES:
-                # Определяем chat_id из метода, если не передан
-                if chat_id is None:
-                    # Пытаемся получить chat_id из метода
-                    if hasattr(method, 'chat_id'):
-                        chat_id = method.chat_id
-                    elif hasattr(method, 'chat') and hasattr(method.chat, 'id'):
-                        chat_id = method.chat.id
-                    else:
-                        # Если не можем определить chat_id, используем заглушку
-                        chat_id = "unknown"
-                
-                # Определяем тип чата
-                if isinstance(chat_id, int) or (isinstance(chat_id, str) and chat_id.lstrip('-').isdigit()):
-                    if str(chat_id).startswith("-"):
-                        # Проверяем, является ли это супергруппой или каналом
-                        chat_id_str = str(chat_id)
-                        if chat_id_str.startswith("-100"):
-                            chat_type = ChatType.CHANNEL  # Каналы обычно начинаются с -100
+                if method.__class__.__name__ in MESSAGE_LIMITING_CLASSES:
+                    # Определяем chat_id из метода, если не передан
+                    if chat_id is None:
+                        # Пытаемся получить chat_id из метода
+                        if hasattr(method, 'chat_id'):
+                            chat_id = method.chat_id
+                        elif hasattr(method, 'chat') and hasattr(method.chat, 'id'):
+                            chat_id = method.chat.id
                         else:
-                            chat_type = ChatType.GROUP
+                            # Если не можем определить chat_id, используем заглушку
+                            chat_id = "unknown"
+                    
+                    # Определяем тип чата
+                    if isinstance(chat_id, int) or (isinstance(chat_id, str) and chat_id.lstrip('-').isdigit()):
+                        if str(chat_id).startswith("-"):
+                            # Проверяем, является ли это супергруппой или каналом
+                            chat_id_str = str(chat_id)
+                            if chat_id_str.startswith("-100"):
+                                chat_type = ChatType.CHANNEL  # Каналы обычно начинаются с -100
+                            else:
+                                chat_type = ChatType.GROUP
+                        else:
+                            chat_type = ChatType.PRIVATE
                     else:
-                        chat_type = ChatType.PRIVATE
-                else:
-                    # Для строковых ID (например, @username) считаем каналами
-                    chat_type = ChatType.CHANNEL
-                
-                return await self.limiter.run(lambda: self.session(self, method, timeout=request_timeout),
-                                              chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
+                        # Для строковых ID (например, @username) считаем каналами
+                        chat_type = ChatType.CHANNEL
+                    
+                    return await self.limiter.run(lambda: self.session(self, method, timeout=request_timeout),
+                                                chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
 
-            return await self.session(self, method, timeout=request_timeout)
-        
-        except TelegramNetworkError as e:
-            msg = e.message.lower()
-            if "serverdisconnectederror" in msg and self.server_disconnected_processor:
-                await self.server_disconnected_processor()
+                return await self.session(self, method, timeout=request_timeout)
+            
+            except TelegramNetworkError as e:
+                msg = e.message.lower()
+                if "serverdisconnectederror" in msg and self.server_disconnected_processor:
+                    await self.server_disconnected_processor()
+                retry += 1
 
 
     def __hash__(self) -> int:
