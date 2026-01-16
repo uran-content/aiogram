@@ -547,8 +547,8 @@ class Bot:
                     # Для строковых ID (например, @username) считаем каналами
                     chat_type = ChatType.CHANNEL
                 
-                return await self.limiter.run(self.session(self, method, timeout=request_timeout),
-                                            chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
+                return await self.limiter.run(lambda: self.session(self, method, timeout=request_timeout),
+                                              chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
 
             return await self.session(self, method, timeout=request_timeout)
         
