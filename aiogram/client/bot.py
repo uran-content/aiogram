@@ -551,7 +551,9 @@ class Bot:
                         chat_type = ChatType.CHANNEL
                     
                     return await self.limiter.run(lambda: self.session(self, method, timeout=request_timeout),
-                                                  chat_id=chat_id, chat_type=chat_type, priority=1 if not use_global_limit else 2)
+                                                  chat_id=chat_id, chat_type=chat_type,
+                                                  manual_limit = True if use_global_limit else 2,
+                                                  priority=1 if not use_global_limit else 2)
 
                 return await self.session(self, method, timeout=request_timeout)
             
