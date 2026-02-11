@@ -302,7 +302,8 @@ class Bot:
             default = DefaultBotProperties(max_sends_per_secods=29)
 
         self.session = session
-        self.limiter = TelegramRateLimiter(global_per_second=default.max_sends_per_secods)
+        self.limiter = TelegramRateLimiter(global_per_second=default.max_sends_per_secods,
+                                           broadcast_share=0.2)
         self.server_disconnected_processor = server_disconnected_processor
 
         # Few arguments are completely removed in 3.7.0 version
