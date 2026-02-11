@@ -67,6 +67,8 @@ Available types
     chat_member_owner
     chat_member_restricted
     chat_member_updated
+    chat_owner_changed
+    chat_owner_left
     chat_permissions
     chat_photo
     chat_shared
@@ -78,6 +80,7 @@ Available types
     copy_text_button
     dice
     direct_message_price_changed
+    direct_messages_topic
     document
     external_reply_info
     file
@@ -90,6 +93,7 @@ Available types
     general_forum_topic_hidden
     general_forum_topic_unhidden
     gift
+    gift_background
     gift_info
     gifts
     giveaway
@@ -178,17 +182,28 @@ Available types
     story_area_type_suggested_reaction
     story_area_type_unique_gift
     story_area_type_weather
+    suggested_post_approval_failed
+    suggested_post_approved
+    suggested_post_declined
+    suggested_post_info
+    suggested_post_paid
+    suggested_post_parameters
+    suggested_post_price
+    suggested_post_refunded
     switch_inline_query_chosen_chat
     text_quote
     unique_gift
     unique_gift_backdrop
     unique_gift_backdrop_colors
+    unique_gift_colors
     unique_gift_info
     unique_gift_model
     unique_gift_symbol
     user
     user_chat_boosts
+    user_profile_audios
     user_profile_photos
+    user_rating
     user_shared
     users_shared
     venue
@@ -198,6 +213,7 @@ Available types
     video_chat_scheduled
     video_chat_started
     video_note
+    video_quality
     voice
     web_app_data
     web_app_info

@@ -22,10 +22,18 @@
       {
         "type": "Integer",
         "required": false,
-        "description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only",
-        "html_description": "<td>Unique identifier for the target message thread (topic) of the forum; for forum supergroups only</td>",
-        "rst_description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only\n",
+        "description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only",
+        "html_description": "<td>Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only</td>",
+        "rst_description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only\n",
         "name": "message_thread_id"
+      },
+      {
+        "type": "Integer",
+        "required": false,
+        "description": "Identifier of the direct messages topic to which the messages will be forwarded; required if the messages are forwarded to a direct messages chat",
+        "html_description": "<td>Identifier of the direct messages topic to which the messages will be forwarded; required if the messages are forwarded to a direct messages chat</td>",
+        "rst_description": "Identifier of the direct messages topic to which the messages will be forwarded; required if the messages are forwarded to a direct messages chat\n",
+        "name": "direct_messages_topic_id"
       },
       {
         "type": "Integer or String",

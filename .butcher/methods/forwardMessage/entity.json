@@ -22,10 +22,18 @@
       {
         "type": "Integer",
         "required": false,
-        "description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only",
-        "html_description": "<td>Unique identifier for the target message thread (topic) of the forum; for forum supergroups only</td>",
-        "rst_description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only\n",
+        "description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only",
+        "html_description": "<td>Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only</td>",
+        "rst_description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only\n",
         "name": "message_thread_id"
+      },
+      {
+        "type": "Integer",
+        "required": false,
+        "description": "Identifier of the direct messages topic to which the message will be forwarded; required if the message is forwarded to a direct messages chat",
+        "html_description": "<td>Identifier of the direct messages topic to which the message will be forwarded; required if the message is forwarded to a direct messages chat</td>",
+        "rst_description": "Identifier of the direct messages topic to which the message will be forwarded; required if the message is forwarded to a direct messages chat\n",
+        "name": "direct_messages_topic_id"
       },
       {
         "type": "Integer or String",
@@ -58,6 +66,22 @@
         "html_description": "<td>Protects the contents of the forwarded message from forwarding and saving</td>",
         "rst_description": "Protects the contents of the forwarded message from forwarding and saving\n",
         "name": "protect_content"
+      },
+      {
+        "type": "String",
+        "required": false,
+        "description": "Unique identifier of the message effect to be added to the message; only available when forwarding to private chats",
+        "html_description": "<td>Unique identifier of the message effect to be added to the message; only available when forwarding to private chats</td>",
+        "rst_description": "Unique identifier of the message effect to be added to the message; only available when forwarding to private chats\n",
+        "name": "message_effect_id"
+      },
+      {
+        "type": "SuggestedPostParameters",
+        "required": false,
+        "description": "A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only",
+        "html_description": "<td>A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only</td>",
+        "rst_description": "A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only\n",
+        "name": "suggested_post_parameters"
       },
       {
         "type": "Integer",

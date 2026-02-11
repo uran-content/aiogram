@@ -16,6 +16,279 @@ Changelog
 
 .. towncrier release notes start
 
+3.25.0 (2026-02-10)
+====================
+
+Features
+--------
+
+- Add full_name property to Contact and corresponding tests
+  `#1758 <https://github.com/aiogram/aiogram/issues/1758>`_
+- Updated to `Bot API 9.4 (February 9, 2026) <https://core.telegram.org/bots/api-changelog#february-9-2026>`_
+
+  **New Features:**
+
+  - Bots with Premium subscriptions can now use custom emoji directly in messages to private, group, and supergroup chats
+  - Bots can create topics in private chats via the :class:`aiogram.methods.create_forum_topic.CreateForumTopic` method
+  - Bots can prevent users from creating/deleting topics in private chats through BotFather settings
+
+  **New Fields:**
+
+  - Added :code:`allows_users_to_create_topics` field to :class:`aiogram.types.user.User` class - indicates whether the user allows others to create topics in chats with them
+  - Added :code:`icon_custom_emoji_id` field to :class:`aiogram.types.keyboard_button.KeyboardButton` and :class:`aiogram.types.inline_keyboard_button.InlineKeyboardButton` classes - allows displaying custom emoji icons on buttons
+  - Added :code:`style` field to :class:`aiogram.types.keyboard_button.KeyboardButton` and :class:`aiogram.types.inline_keyboard_button.InlineKeyboardButton` classes - changes button color/style
+  - Added :code:`chat_owner_left` field to :class:`aiogram.types.message.Message` class - service message indicating chat owner has left (type: :class:`aiogram.types.chat_owner_left.ChatOwnerLeft`)
+  - Added :code:`chat_owner_changed` field to :class:`aiogram.types.message.Message` class - service message indicating chat ownership has transferred (type: :class:`aiogram.types.chat_owner_changed.ChatOwnerChanged`)
+  - Added :code:`qualities` field to :class:`aiogram.types.video.Video` class - list of available video quality options (type: :code:`list[`:class:`aiogram.types.video_quality.VideoQuality`:code:`]`)
+  - Added :code:`first_profile_audio` field to :class:`aiogram.types.chat_full_info.ChatFullInfo` class - user's first profile audio
+  - Added :code:`rarity` field to :class:`aiogram.types.unique_gift_model.UniqueGiftModel` class
+  - Added :code:`is_burned` field to :class:`aiogram.types.unique_gift.UniqueGift` class
+
+  **New Methods:**
+
+  - Added :class:`aiogram.methods.set_my_profile_photo.SetMyProfilePhoto` method - allows bots to set their profile photo
+  - Added :class:`aiogram.methods.remove_my_profile_photo.RemoveMyProfilePhoto` method - allows bots to remove their profile photo
+  - Added :class:`aiogram.methods.get_user_profile_audios.GetUserProfileAudios` method - retrieves a user's profile audio list
+  - Added :meth:`aiogram.types.user.User.get_profile_audios` shortcut - creates a prefilled :class:`aiogram.methods.get_user_profile_audios.GetUserProfileAudios` request with :code:`user_id`
+
+  **New Types:**
+
+  - Added :class:`aiogram.types.chat_owner_left.ChatOwnerLeft` type - describes a service message about the chat owner leaving the chat
+  - Added :class:`aiogram.types.chat_owner_changed.ChatOwnerChanged` type - describes a service message about an ownership change in the chat
+  - Added :class:`aiogram.types.video_quality.VideoQuality` type - describes available video quality options
+  - Added :class:`aiogram.types.user_profile_audios.UserProfileAudios` type - represents the collection of audios displayed on a user's profile
+
+  `#1761 <https://github.com/aiogram/aiogram/issues/1761>`_
+
+
+Bugfixes
+--------
+
+- Fixed scene handling for ``channel_post`` and ``edited_channel_post`` when Scenes are registered but FSM state is unavailable, and added channel-scoped FSM context support for ``CHAT``/``CHAT_TOPIC`` strategies.
+  `#1743 <https://github.com/aiogram/aiogram/issues/1743>`_
+
+
+Misc
+----
+
+- Migrated from Black and isort to Ruff for code formatting and linting, a modern, blazingly fast formatter and linter written in Rust.
+
+  Enabled additional ruff rule sets.
+
+  **For end users:**
+
+  No changes required. This is purely a development tooling change that doesn't affect the library API or behavior.
+
+  **For contributors:**
+
+  - Use ``make reformat`` or ``uv run ruff format`` to format code (replaces ``black`` and ``isort``)
+  - Use ``make lint`` to check code quality (now includes formatting, linting, and type checking)
+  - Pre-commit hooks automatically updated to use ``ruff`` and ``ruff-format``
+  - CI/CD pipelines updated to use ruff in GitHub Actions workflows
+
+  **Benefits:**
+
+  - 10-100x faster formatting and linting compared to Black + isort + flake8
+  - Single tool for formatting, import sorting, and linting
+  - More comprehensive code quality checks out of the box
+  - Auto-fixes for many common issues (33 issues auto-fixed during migration)
+  - Better integration with modern Python development workflows
+
+  This change improves the developer experience and code quality while maintaining the same code style standards.
+  `#1750 <https://github.com/aiogram/aiogram/issues/1750>`_
+
+
+3.24.0 (2026-01-02)
+====================
+
+Features
+--------
+
+- Added full support for Telegram Bot API 9.3
+
+  **Topics in Private Chats**
+
+  Bot API 9.3 introduces forum topics functionality for private chats:
+
+  - Added new ``sendMessageDraft`` method for streaming partial messages while being generated (requires forum topic mode enabled)
+  - Added ``has_topics_enabled`` field to the ``User`` class to determine if forum topic mode is enabled in private chats
+  - Added ``message_thread_id`` and ``is_topic_message`` fields to the ``Message`` class for private chat topic support
+  - Added ``message_thread_id`` parameter support to messaging methods: ``sendMessage``, ``sendPhoto``, ``sendVideo``, ``sendAnimation``, ``sendAudio``, ``sendDocument``, ``sendPaidMedia``, ``sendSticker``, ``sendVideoNote``, ``sendVoice``, ``sendLocation``, ``sendVenue``, ``sendContact``, ``sendPoll``, ``sendDice``, ``sendInvoice``, ``sendGame``, ``sendMediaGroup``, ``copyMessage``, ``copyMessages``, ``forwardMessage``, ``forwardMessages``
+  - Updated ``sendChatAction`` to support ``message_thread_id`` parameter in private chats
+  - Updated ``editForumTopic``, ``deleteForumTopic``, ``unpinAllForumTopicMessages`` methods to manage private chat topics
+  - Added ``is_name_implicit`` field to ``ForumTopic`` class
+
+  **Gifts System Enhancements**
+
+  Enhanced gifts functionality with new methods and extended capabilities:
+
+  - Added ``getUserGifts`` method to retrieve gifts owned and hosted by a user
+  - Added ``getChatGifts`` method to retrieve gifts owned by a chat
+  - Updated ``UniqueGiftInfo`` class: replaced ``last_resale_star_count`` with ``last_resale_currency`` and ``last_resale_amount`` fields, added "gifted_upgrade" and "offer" as origin values
+  - Updated ``getBusinessAccountGifts`` method: replaced ``exclude_limited`` parameter with ``exclude_limited_upgradable`` and ``exclude_limited_non_upgradable``, added ``exclude_from_blockchain`` parameter
+  - Added new fields to ``Gift`` class: ``personal_total_count``, ``personal_remaining_count``, ``is_premium``, ``has_colors``, ``unique_gift_variant_count``, ``gift_background``
+  - Added new fields to ``UniqueGift`` class: ``gift_id``, ``is_from_blockchain``, ``is_premium``, ``colors``
+  - Added new fields to gift info classes: ``is_upgrade_separate``, ``unique_gift_number``
+  - Added ``gift_upgrade_sent`` field to the ``Message`` class
+  - Added ``gifts_from_channels`` field to the ``AcceptedGiftTypes`` class
+  - Added new ``UniqueGiftColors`` class for color schemes in user names and link previews
+  - Added new ``GiftBackground`` class for gift background styling
+
+  **Business Accounts & Stories**
+
+  - Added ``repostStory`` method to enable reposting stories across managed business accounts
+
+  **Miscellaneous Updates**
+
+  - Bots can now disable main usernames and set ``can_restrict_members`` rights in channels
+  - Maximum paid media price increased to 25000 Telegram Stars
+  - Added new ``UserRating`` class
+  - Added ``rating``, ``paid_message_star_count``, ``unique_gift_colors`` fields to the ``ChatFullInfo`` class
+  - Added support for ``message_effect_id`` parameter in forward/copy operations
+  - Added ``completed_by_chat`` field to the ``ChecklistTask`` class
+  `#1747 <https://github.com/aiogram/aiogram/issues/1747>`_
+
+
+Bugfixes
+--------
+
+- Fixed I18n initialization with relative path
+  `#1740 <https://github.com/aiogram/aiogram/issues/1740>`_
+- Fixed dependency injection for arguments that have "ForwardRef" annotations in Py3.14+
+  since `inspect.getfullargspec(callback)` can't process callback if it's arguments have "ForwardRef" annotations
+  `#1741 <https://github.com/aiogram/aiogram/issues/1741>`_
+
+
+Misc
+----
+
+- Migrated from ``hatch`` to ``uv`` for dependency management and development workflows.
+
+  This change improves developer experience with significantly faster dependency resolution (10-100x faster than pip), automatic virtual environment management, and reproducible builds through lockfile support.
+
+  **What changed for contributors:**
+
+  - Install dependencies with ``uv sync --all-extras --group dev --group test`` instead of ``pip install -e .[dev,test,docs]``
+  - Run commands with ``uv run`` prefix (e.g., ``uv run pytest``, ``uv run black``)
+  - All Makefile commands now use ``uv`` internally (``make install``, ``make test``, ``make lint``, etc.)
+  - Version bumping now uses a custom ``scripts/bump_version.py`` script instead of ``hatch version``
+
+  **What stayed the same:**
+
+  - Build backend remains ``hatchling`` (no changes to package building)
+  - Dynamic version reading from ``aiogram/__meta__.py`` still works
+  - All GitHub Actions CI/CD workflows updated to use ``uv``
+  - ReadTheDocs builds continue to work without changes
+  - Development dependencies (``dev``, ``test``) moved to ``[dependency-groups]`` section
+  - Documentation dependencies (``docs``) remain in ``[project.optional-dependencies]`` for compatibility
+
+  Contributors can use either the traditional ``pip``/``venv`` workflow or the new ``uv`` workflow - both are documented in the contributing guide.
+  `#1748 <https://github.com/aiogram/aiogram/issues/1748>`_
+- Updated type hints in the codebase to Python 3.10+ style unions and optionals.
+  `#1749 <https://github.com/aiogram/aiogram/issues/1749>`_
+
+
+3.23.0 (2025-12-07)
+====================
+
+Features
+--------
+
+- This PR updates the codebase to support Python 3.14.
+
+  - Updated project dep `aiohttp`
+  - Updated development deps
+  - Fixed tests to support Py3.14
+  - Refactored `uvloop` using due to deprecation of `asyncio.set_event_loop_police`
+  `#1730 <https://github.com/aiogram/aiogram/issues/1730>`_
+
+
+Deprecations and Removals
+-------------------------
+
+- This PR updates the codebase following the end of life for Python 3.9.
+
+  Reference: https://devguide.python.org/versions/
+
+  - Updated type annotations to Python 3.10+ style, replacing deprecated ``List``, ``Set``, etc., with built-in ``list``, ``set``, and related types.
+  - Refactored code by simplifying nested ``if`` expressions.
+  - Updated several dependencies, including security-related upgrades.
+  `#1726 <https://github.com/aiogram/aiogram/issues/1726>`_
+
+
+Misc
+----
+
+- Updated pydantic to 2.12, which supports Python 3.14
+  `#1729 <https://github.com/aiogram/aiogram/issues/1729>`_
+- Temporary silents warn when `uvloop` uses deprecated `asyncio.iscoroutinefunction` function in py3.14+ in tests
+  `#1739 <https://github.com/aiogram/aiogram/issues/1739>`_
+
+
+3.22.0 (2025-08-17)
+====================
+
+Features
+--------
+
+- Support validating init data using only bot id.
+  `#1715 <https://github.com/aiogram/aiogram/issues/1715>`_
+- Added full support for the `Bot API 9.2 <https://core.telegram.org/bots/api-changelog#august-15-2025>`_:
+
+  **Direct Messages in Channels**
+
+  - Added the field :code:`is_direct_messages` to the classes :class:`aiogram.types.chat.Chat` and :class:`aiogram.types.chat_full_info.ChatFullInfo`, indicating whether the chat is a direct messages chat.
+  - Added the field :code:`parent_chat` to the class :class:`aiogram.types.chat_full_info.ChatFullInfo`, describing the parent channel for direct messages chats.
+  - Added the class :class:`aiogram.types.direct_messages_topic.DirectMessagesTopic` representing a direct messages topic.
+  - Added the field :code:`direct_messages_topic` to the class :class:`aiogram.types.message.Message`, describing the direct messages topic associated with a message.
+  - Added the parameter :code:`direct_messages_topic_id` to multiple sending methods for directing messages to specific direct message topics.
+
+  **Suggested Posts**
+
+  - Added the class :class:`aiogram.types.suggested_post_parameters.SuggestedPostParameters` representing parameters for suggested posts.
+  - Added the parameter :code:`suggested_post_parameters` to various sending methods, allowing bots to create suggested posts for channel approval.
+  - Added the method :class:`aiogram.methods.approve_suggested_post.ApproveSuggestedPost`, allowing bots to approve suggested posts in direct messages chats.
+  - Added the method :class:`aiogram.methods.decline_suggested_post.DeclineSuggestedPost`, allowing bots to decline suggested posts in direct messages chats.
+  - Added the field :code:`can_manage_direct_messages` to administrator-related classes :class:`aiogram.types.chat_administrator_rights.ChatAdministratorRights` and :class:`aiogram.types.chat_member_administrator.ChatMemberAdministrator`.
+  - Added the class :class:`aiogram.types.suggested_post_info.SuggestedPostInfo` representing information about a suggested post.
+  - Added the class :class:`aiogram.types.suggested_post_price.SuggestedPostPrice` representing the price for a suggested post.
+  - Added service message classes for suggested post events:
+
+    - :class:`aiogram.types.suggested_post_approved.SuggestedPostApproved` and the field :code:`suggested_post_approved` to :class:`aiogram.types.message.Message`
+    - :class:`aiogram.types.suggested_post_approval_failed.SuggestedPostApprovalFailed` and the field :code:`suggested_post_approval_failed` to :class:`aiogram.types.message.Message`
+    - :class:`aiogram.types.suggested_post_declined.SuggestedPostDeclined` and the field :code:`suggested_post_declined` to :class:`aiogram.types.message.Message`
+    - :class:`aiogram.types.suggested_post_paid.SuggestedPostPaid` and the field :code:`suggested_post_paid` to :class:`aiogram.types.message.Message`
+    - :class:`aiogram.types.suggested_post_refunded.SuggestedPostRefunded` and the field :code:`suggested_post_refunded` to :class:`aiogram.types.message.Message`
+
+  **Enhanced Checklists**
+
+  - Added the field :code:`checklist_task_id` to the class :class:`aiogram.types.reply_parameters.ReplyParameters`, allowing replies to specific checklist tasks.
+  - Added the field :code:`reply_to_checklist_task_id` to the class :class:`aiogram.types.message.Message`, indicating which checklist task a message is replying to.
+
+  **Gifts Improvements**
+
+  - Added the field :code:`publisher_chat` to the classes :class:`aiogram.types.gift.Gift` and :class:`aiogram.types.unique_gift.UniqueGift`, describing the chat that published the gift.
+
+  **Additional Features**
+
+  - Added the field :code:`is_paid_post` to the class :class:`aiogram.types.message.Message`, indicating whether a message is a paid post.
+  `#1720 <https://github.com/aiogram/aiogram/issues/1720>`_
+
+
+Bugfixes
+--------
+
+- Use `hmac.compare_digest` for validating WebApp data to prevent timing attacks.
+  `#1709 <https://github.com/aiogram/aiogram/issues/1709>`_
+
+
+Misc
+----
+
+- Migrated `MongoStorage` from relying on deprecated `motor` package to using new async `PyMongo`. To use mongo storage with new async `PyMongo`, you need to install the `PyMongo` package instead of `motor` and just substitute deprecated `MongoStorage` with `PyMongoStorage` class, no other action needed.
+  `#1705 <https://github.com/aiogram/aiogram/issues/1705>`_
+
+
 3.21.0 (2025-07-05)
 ====================
 

@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 from .accepted_gift_types import AcceptedGiftTypes
 from .affiliate_info import AffiliateInfo
@@ -81,6 +81,7 @@ from .custom import DateTime
 from .date_time_union import DateTimeUnion
 from .dice import Dice
 from .direct_message_price_changed import DirectMessagePriceChanged
+from .direct_messages_topic import DirectMessagesTopic
 from .document import Document
 from .downloadable import Downloadable
 from .encrypted_credentials import EncryptedCredentials
@@ -99,6 +100,7 @@ from .game_high_score import GameHighScore
 from .general_forum_topic_hidden import GeneralForumTopicHidden
 from .general_forum_topic_unhidden import GeneralForumTopicUnhidden
 from .gift import Gift
+from .gift_background import GiftBackground
 from .gift_info import GiftInfo
 from .gifts import Gifts
 from .giveaway import Giveaway
@@ -273,6 +275,14 @@ from .story_area_type_union import StoryAreaTypeUnion
 from .story_area_type_unique_gift import StoryAreaTypeUniqueGift
 from .story_area_type_weather import StoryAreaTypeWeather
 from .successful_payment import SuccessfulPayment
+from .suggested_post_approval_failed import SuggestedPostApprovalFailed
+from .suggested_post_approved import SuggestedPostApproved
+from .suggested_post_declined import SuggestedPostDeclined
+from .suggested_post_info import SuggestedPostInfo
+from .suggested_post_paid import SuggestedPostPaid
+from .suggested_post_parameters import SuggestedPostParameters
+from .suggested_post_price import SuggestedPostPrice
+from .suggested_post_refunded import SuggestedPostRefunded
 from .switch_inline_query_chosen_chat import SwitchInlineQueryChosenChat
 from .text_quote import TextQuote
 from .transaction_partner import TransactionPartner
@@ -287,6 +297,7 @@ from .transaction_partner_user import TransactionPartnerUser
 from .unique_gift import UniqueGift
 from .unique_gift_backdrop import UniqueGiftBackdrop
 from .unique_gift_backdrop_colors import UniqueGiftBackdropColors
+from .unique_gift_colors import UniqueGiftColors
 from .unique_gift_info import UniqueGiftInfo
 from .unique_gift_model import UniqueGiftModel
 from .unique_gift_symbol import UniqueGiftSymbol
@@ -294,6 +305,7 @@ from .update import Update
 from .user import User
 from .user_chat_boosts import UserChatBoosts
 from .user_profile_photos import UserProfilePhotos
+from .user_rating import UserRating
 from .user_shared import UserShared
 from .users_shared import UsersShared
 from .venue import Venue
@@ -375,6 +387,8 @@ __all__ = (
     "ChatMemberRestricted",
     "ChatMemberUnion",
     "ChatMemberUpdated",
+    "ChatOwnerChanged",
+    "ChatOwnerLeft",
     "ChatPermissions",
     "ChatPhoto",
     "ChatShared",
@@ -390,6 +404,7 @@ __all__ = (
     "DateTimeUnion",
     "Dice",
     "DirectMessagePriceChanged",
+    "DirectMessagesTopic",
     "Document",
     "Downloadable",
     "EncryptedCredentials",
@@ -409,6 +424,7 @@ __all__ = (
     "GeneralForumTopicHidden",
     "GeneralForumTopicUnhidden",
     "Gift",
+    "GiftBackground",
     "GiftInfo",
     "Gifts",
     "Giveaway",
@@ -581,6 +597,14 @@ __all__ = (
     "StoryAreaTypeUniqueGift",
     "StoryAreaTypeWeather",
     "SuccessfulPayment",
+    "SuggestedPostApprovalFailed",
+    "SuggestedPostApproved",
+    "SuggestedPostDeclined",
+    "SuggestedPostInfo",
+    "SuggestedPostPaid",
+    "SuggestedPostParameters",
+    "SuggestedPostPrice",
+    "SuggestedPostRefunded",
     "SwitchInlineQueryChosenChat",
     "TelegramObject",
     "TextQuote",
@@ -598,13 +622,16 @@ __all__ = (
     "UniqueGift",
     "UniqueGiftBackdrop",
     "UniqueGiftBackdropColors",
+    "UniqueGiftColors",
     "UniqueGiftInfo",
     "UniqueGiftModel",
     "UniqueGiftSymbol",
     "Update",
     "User",
     "UserChatBoosts",
+    "UserProfileAudios",
     "UserProfilePhotos",
+    "UserRating",
     "UserShared",
     "UsersShared",
     "Venue",
@@ -614,6 +641,7 @@ __all__ = (
     "VideoChatScheduled",
     "VideoChatStarted",
     "VideoNote",
+    "VideoQuality",
     "Voice",
     "WebAppData",
     "WebAppInfo",
@@ -622,6 +650,10 @@ __all__ = (
 )
 
 from ..client.default import Default as _Default
+from .chat_owner_changed import ChatOwnerChanged
+from .chat_owner_left import ChatOwnerLeft
+from .user_profile_audios import UserProfileAudios
+from .video_quality import VideoQuality
 
 # Load typing forward refs for every TelegramObject
 for _entity_name in __all__:
@@ -630,7 +662,7 @@ for _entity_name in __all__:
         continue
     _entity.model_rebuild(
         _types_namespace={
-            "List": List,
+            "List": list,
             "Optional": Optional,
             "Union": Union,
             "Literal": Literal,

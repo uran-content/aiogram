@@ -22,17 +22,17 @@
       {
         "type": "Integer or String",
         "required": true,
-        "description": "Unique identifier for the target chat or username of the target channel (in the format @channelusername)",
-        "html_description": "<td>Unique identifier for the target chat or username of the target channel (in the format <code>@channelusername</code>)</td>",
-        "rst_description": "Unique identifier for the target chat or username of the target channel (in the format :code:`@channelusername`)\n",
+        "description": "Unique identifier for the target chat or username of the target supergroup (in the format @supergroupusername). Channel chats and channel direct messages chats aren't supported.",
+        "html_description": "<td>Unique identifier for the target chat or username of the target supergroup (in the format <code>@supergroupusername</code>). Channel chats and channel direct messages chats aren't supported.</td>",
+        "rst_description": "Unique identifier for the target chat or username of the target supergroup (in the format :code:`@supergroupusername`). Channel chats and channel direct messages chats aren't supported.\n",
         "name": "chat_id"
       },
       {
         "type": "Integer",
         "required": false,
-        "description": "Unique identifier for the target message thread; for supergroups only",
-        "html_description": "<td>Unique identifier for the target message thread; for supergroups only</td>",
-        "rst_description": "Unique identifier for the target message thread; for supergroups only\n",
+        "description": "Unique identifier for the target message thread or topic of a forum; for supergroups and private chats of bots with forum topic mode enabled only",
+        "html_description": "<td>Unique identifier for the target message thread or topic of a forum; for supergroups and private chats of bots with forum topic mode enabled only</td>",
+        "rst_description": "Unique identifier for the target message thread or topic of a forum; for supergroups and private chats of bots with forum topic mode enabled only\n",
         "name": "message_thread_id"
       },
       {

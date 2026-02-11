@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..types import ChatIdUnion
 from .base import TelegramMethod
@@ -8,7 +8,7 @@ from .base import TelegramMethod
 
 class PinChatMessage(TelegramMethod[bool]):
     """
-    Use this method to add a message to the list of pinned messages in a chat. If the chat is not a private chat, the bot must be an administrator in the chat for this to work and must have the 'can_pin_messages' administrator right in a supergroup or 'can_edit_messages' administrator right in a channel. Returns :code:`True` on success.
+    Use this method to add a message to the list of pinned messages in a chat. In private chats and channel direct messages chats, all non-service messages can be pinned. Conversely, the bot must be an administrator with the 'can_pin_messages' right or the 'can_edit_messages' right to pin messages in groups and channels respectively. Returns :code:`True` on success.
 
     Source: https://core.telegram.org/bots/api#pinchatmessage
     """
@@ -20,9 +20,9 @@ class PinChatMessage(TelegramMethod[bool]):
     """Unique identifier for the target chat or username of the target channel (in the format :code:`@channelusername`)"""
     message_id: int
     """Identifier of a message to pin"""
-    business_connection_id: Optional[str] = None
+    business_connection_id: str | None = None
     """Unique identifier of the business connection on behalf of which the message will be pinned"""
-    disable_notification: Optional[bool] = None
+    disable_notification: bool | None = None
     """Pass :code:`True` if it is not necessary to send a notification to all chat members about the new pinned message. Notifications are always disabled in channels and private chats."""
 
     if TYPE_CHECKING:
@@ -34,8 +34,8 @@ class PinChatMessage(TelegramMethod[bool]):
             *,
             chat_id: ChatIdUnion,
             message_id: int,
-            business_connection_id: Optional[str] = None,
-            disable_notification: Optional[bool] = None,
+            business_connection_id: str | None = None,
+            disable_notification: bool | None = None,
             **__pydantic_kwargs: Any,
         ) -> None:
             # DO NOT EDIT MANUALLY!!!

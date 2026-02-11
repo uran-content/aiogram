@@ -22,10 +22,18 @@
       {
         "type": "Integer",
         "required": false,
-        "description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only",
-        "html_description": "<td>Unique identifier for the target message thread (topic) of the forum; for forum supergroups only</td>",
-        "rst_description": "Unique identifier for the target message thread (topic) of the forum; for forum supergroups only\n",
+        "description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only",
+        "html_description": "<td>Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only</td>",
+        "rst_description": "Unique identifier for the target message thread (topic) of a forum; for forum supergroups and private chats of bots with forum topic mode enabled only\n",
         "name": "message_thread_id"
+      },
+      {
+        "type": "Integer",
+        "required": false,
+        "description": "Identifier of the direct messages topic to which the message will be sent; required if the message is sent to a direct messages chat",
+        "html_description": "<td>Identifier of the direct messages topic to which the message will be sent; required if the message is sent to a direct messages chat</td>",
+        "rst_description": "Identifier of the direct messages topic to which the message will be sent; required if the message is sent to a direct messages chat\n",
+        "name": "direct_messages_topic_id"
       },
       {
         "type": "Integer or String",
@@ -106,6 +114,22 @@
         "html_description": "<td>Pass <em>True</em> to allow up to 1000 messages per second, ignoring <a href=\"https://core.telegram.org/bots/faq#how-can-i-message-all-of-my-bot-39s-subscribers-at-once\">broadcasting limits</a> for a fee of 0.1 Telegram Stars per message. The relevant Stars will be withdrawn from the bot's balance</td>",
         "rst_description": "Pass :code:`True` to allow up to 1000 messages per second, ignoring `broadcasting limits <https://core.telegram.org/bots/faq#how-can-i-message-all-of-my-bot-39s-subscribers-at-once>`_ for a fee of 0.1 Telegram Stars per message. The relevant Stars will be withdrawn from the bot's balance\n",
         "name": "allow_paid_broadcast"
+      },
+      {
+        "type": "String",
+        "required": false,
+        "description": "Unique identifier of the message effect to be added to the message; only available when copying to private chats",
+        "html_description": "<td>Unique identifier of the message effect to be added to the message; only available when copying to private chats</td>",
+        "rst_description": "Unique identifier of the message effect to be added to the message; only available when copying to private chats\n",
+        "name": "message_effect_id"
+      },
+      {
+        "type": "SuggestedPostParameters",
+        "required": false,
+        "description": "A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only. If the message is sent as a reply to another suggested post, then that suggested post is automatically declined.",
+        "html_description": "<td>A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only. If the message is sent as a reply to another suggested post, then that suggested post is automatically declined.</td>",
+        "rst_description": "A JSON-serialized object containing the parameters of the suggested post to send; for direct messages chats only. If the message is sent as a reply to another suggested post, then that suggested post is automatically declined.\n",
+        "name": "suggested_post_parameters"
       },
       {
         "type": "ReplyParameters",

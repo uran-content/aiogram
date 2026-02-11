@@ -17,6 +17,7 @@ from aiogram.fsm.storage.memory import (
     SimpleEventIsolation,
 )
 from aiogram.fsm.storage.mongo import MongoStorage
+from aiogram.fsm.storage.pymongo import PyMongoStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from tests.mocked_bot import MockedBot
 
@@ -38,7 +39,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "redis: marked tests require redis connection to run")
     config.addinivalue_line("markers", "mongo: marked tests require mongo connection to run")
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" and sys.version_info < (3, 14):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     else:
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
@@ -103,6 +104,36 @@ async def mongo_storage(mongo_server):
 
 
 @pytest.fixture()
+def pymongo_server(request):
+    mongo_uri = request.config.getoption("--mongo")
+    if mongo_uri is None:
+        pytest.skip(SKIP_MESSAGE_PATTERN.format(db="mongo"))
+    else:
+        return mongo_uri
+
+
+@pytest.fixture()
+async def pymongo_storage(pymongo_server):
+    try:
+        parse_mongo_url(pymongo_server)
+    except InvalidURI as e:
+        raise UsageError(INVALID_URI_PATTERN.format(db="mongo", uri=pymongo_server, err=e))
+    storage = PyMongoStorage.from_url(
+        url=pymongo_server,
+        connection_kwargs={"serverSelectionTimeoutMS": 2000},
+    )
+    try:
+        await storage._client.server_info()
+    except PyMongoError as e:
+        pytest.fail(str(e))
+    else:
+        yield storage
+        await storage._client.drop_database(storage._database)
+    finally:
+        await storage.close()
+
+
+@pytest.fixture()
 async def memory_storage():
     storage = MemoryStorage()
     try:
@@ -113,8 +144,7 @@ async def memory_storage():
 
 @pytest.fixture()
 async def redis_isolation(redis_storage):
-    isolation = redis_storage.create_isolation()
-    return isolation
+    return redis_storage.create_isolation()
 
 
 @pytest.fixture()
@@ -153,6 +183,16 @@ async def dispatcher():
         yield dp
     finally:
         await dp.emit_shutdown()
+
+
+@pytest.fixture()
+def storage(request):
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture()
+def isolation(request):
+    return request.getfixturevalue(request.param)
 
 
 # @pytest.fixture(scope="session")
