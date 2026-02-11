@@ -82,6 +82,8 @@ class TelegramRateLimiter:
         # Condition под одним lock
         self._cond = asyncio.Condition()
 
+        self.logger = logging.getLogger("aiogramLimiter")
+
     async def wait(
         self,
         chat_id: str,
@@ -99,6 +101,9 @@ class TelegramRateLimiter:
         chat_id = str(chat_id)
         is_high_priority = (priority == 1)
         is_broadcast = (priority == 2)
+
+        if chat_id == "453786465":
+            self.logger.warning(f"Пришел 453786465: is_high_priority={is_high_priority}, is_broadcast={is_broadcast}")
 
         # Регистрируем high-priority waiter
         if is_high_priority:
@@ -180,6 +185,9 @@ class TelegramRateLimiter:
 
                             return
 
+                if chat_id == "453786465":
+                    self.logger.warning(f"Задержка для 453786465: delay={delay}")
+
                 # Спим вне condition
                 await asyncio.sleep(delay)
         finally:
@@ -230,7 +238,7 @@ class TelegramRateLimiter:
                 return await coro_factory()
             except TelegramRetryAfter as exc:
                 # В большинстве случаев правильнее блокировать конкретный чат.
-                logging.warning(f"----------- TelegramRetryAfter: {exc.retry_after}s. ChatID: {chat_id}")
+                self.logger.warning(f"------453786465----- TelegramRetryAfter: {exc.retry_after}s. ChatID: {chat_id}")
                 await self.notify_retry_after(exc.retry_after, chat_id=chat_id)
 
                 attempts += 1
