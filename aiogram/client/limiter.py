@@ -1,5 +1,6 @@
 import asyncio
 import time
+import logging
 from enum import Enum
 from collections import deque
 from typing import Deque, Dict, Any, Optional, Callable, Awaitable, TypeVar
@@ -229,6 +230,7 @@ class TelegramRateLimiter:
                 return await coro_factory()
             except TelegramRetryAfter as exc:
                 # В большинстве случаев правильнее блокировать конкретный чат.
+                logging.warning(f"----------- TelegramRetryAfter: {exc.retry_after}s. ChatID: {chat_id}")
                 await self.notify_retry_after(exc.retry_after, chat_id=chat_id)
 
                 attempts += 1
