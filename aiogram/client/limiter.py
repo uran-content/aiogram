@@ -216,7 +216,6 @@ class TelegramRateLimiter:
         chat_id: str,
         chat_type: Any = ChatType.PRIVATE,
         priority: int = 1,
-        manual_limit: bool = False,
         *,
         max_retries: int = 3,
     ) -> T:
@@ -225,8 +224,7 @@ class TelegramRateLimiter:
         """
         attempts = 0
         while True:
-            #if manual_limit:
-                #await self.wait(chat_id=chat_id, chat_type=chat_type, priority=priority)
+            await self.wait(chat_id=chat_id, chat_type=chat_type, priority=priority)
             try:
                 return await coro_factory()
             except TelegramRetryAfter as exc:
